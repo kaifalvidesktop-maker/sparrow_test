@@ -1,4 +1,4 @@
-name: Build BEAST Browser
+name: Build SPARROW
 
 on:
   push:
