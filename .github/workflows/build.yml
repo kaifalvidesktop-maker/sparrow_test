@@ -1,0 +1,62 @@
+name: Build Sparrow App
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: sparrow-linux
+            asset_name: sparrow_linux
+          - os: windows-latest
+            artifact_name: sparrow-windows
+            asset_name: sparrow_setup.exe
+          - os: macos-latest
+            artifact_name: sparrow-macos
+            asset_name: sparrow_macos
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Node.js (if frontend requires build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # উইন্ডোজের জন্য rsrc বা অন্য কোনো টুল দিয়ে .ico ফাইল বাইনারির সাথে এমবেড করতে পারেন
+      - name: Build Application
+        shell: bash
+        run: |
+          mkdir -p build_output
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            # উইন্ডোজের ক্ষেত্রে sparrow_setup.exe হিসেবে বিল্ড করা
+            go build -ldflags="-H windowsgui" -o sparrow_setup.exe .
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            go build -o sparrow_macos .
+          else
+            go build -o sparrow_linux .
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            sparrow_setup.exe
+            sparrow_macos
+            sparrow_linux
