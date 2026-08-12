@@ -1,28 +1,17 @@
-name: Build Sparrow App
+name: Build BEAST Browser
 
 on:
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            artifact_name: sparrow-windows
-            asset_name: sparrow_setup.exe
-          - os: macos-latest
-            artifact_name: sparrow-macos
-            asset_name: sparrow_macos
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Go
@@ -30,20 +19,34 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Build Application
-        shell: bash
-        run: |
-          mkdir -p build_output
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            go build -ldflags="-H windowsgui" -o sparrow_setup.exe .
-          else
-            go build -o sparrow_macos .
-          fi
+      - name: Set up MinGW (C compiler)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
 
-      - name: Upload Artifacts
+      - name: Add MinGW to PATH
+        shell: pwsh
+        run: echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify GCC
+        run: gcc --version
+        shell: cmd
+
+      - name: Download Go dependencies
+        run: go mod download
+        shell: cmd
+
+      - name: Build BEAST.exe
+        run: go build -ldflags="-s -w" -o BEAST.exe .
+        shell: cmd
+        env:
+          CGO_ENABLED: 1
+
+      - name: Upload BEAST.exe as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            sparrow_setup.exe
-            sparrow_macos
+          name: BEAST-Windows
+          path: BEAST.exe
