@@ -14,9 +14,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact_name: sparrow-linux
-            asset_name: sparrow_linux
           - os: windows-latest
             artifact_name: sparrow-windows
             asset_name: sparrow_setup.exe
@@ -33,23 +30,14 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Set up Node.js (if frontend requires build)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      # উইন্ডোজের জন্য rsrc বা অন্য কোনো টুল দিয়ে .ico ফাইল বাইনারির সাথে এমবেড করতে পারেন
       - name: Build Application
         shell: bash
         run: |
           mkdir -p build_output
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            # উইন্ডোজের ক্ষেত্রে sparrow_setup.exe হিসেবে বিল্ড করা
             go build -ldflags="-H windowsgui" -o sparrow_setup.exe .
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            go build -o sparrow_macos .
           else
-            go build -o sparrow_linux .
+            go build -o sparrow_macos .
           fi
 
       - name: Upload Artifacts
@@ -59,4 +47,3 @@ jobs:
           path: |
             sparrow_setup.exe
             sparrow_macos
-            sparrow_linux
