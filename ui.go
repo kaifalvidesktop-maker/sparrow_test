@@ -448,7 +448,7 @@ const chromeInjectionJS = `
       '  overflow: visible !important; z-index: 2147483647 !important; pointer-events: auto !important;' +
       '  font-family: "Segoe UI", sans-serif !important; font-size: 13px !important; line-height: normal !important;' +
       '  text-align: left !important; direction: ltr !important; white-space: normal !important;' +
-      '  color: #eee !important; background: #0b0b0d !important; transform: none !important;' +
+      '  color: #eee !important; background: var(--tabstrip-bg, #0b0b0d) !important; transform: none !important;' +
       '  filter: none !important; clip: auto !important; clip-path: none !important;' +
       '  contain: layout style !important; isolation: isolate !important;' +
       '}' +
