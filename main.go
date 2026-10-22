@@ -401,7 +401,11 @@ func main() {
 	})
 
 	w.Bind("toggleFullscreenWindow", func() {
-		toggleFullscreenNativeWindow(windowHandle)
+		toggleWindowFullscreen(windowHandle)
+	})
+
+	w.Bind("setPageFullscreen", func(on bool) {
+		setPageFullscreen(windowHandle, on)
 	})
 
 	w.Bind("beginWindowDrag", func(x int, y int) {

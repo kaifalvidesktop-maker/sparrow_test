@@ -1886,6 +1886,12 @@ const chromeInjectionJS = `
         return;
       }
 
+      // Page fullscreen (video etc.): keep the chrome hidden, don't re-enforce it.
+      if (document.documentElement && document.documentElement.hasAttribute('data-sparrow-fs-on')) {
+        root.style.setProperty('display', 'none', 'important');
+        return;
+      }
+
       // Re-append our stylesheet so it stays at the end of <head>.
       // This matters for pages that inject their own CSS after our Init().
       if (document.head && style.parentNode !== document.head) {
