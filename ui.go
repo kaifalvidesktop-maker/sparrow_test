@@ -448,7 +448,7 @@ const chromeInjectionJS = `
       '  overflow: visible !important; z-index: 2147483647 !important; pointer-events: auto !important;' +
       '  font-family: "Segoe UI", sans-serif !important; font-size: 13px !important; line-height: normal !important;' +
       '  text-align: left !important; direction: ltr !important; white-space: normal !important;' +
-      '  color: #eee !important; background: var(--shell-bg) !important; transform: none !important;' +
+      '  color: #eee !important; background: #0b0b0d !important; transform: none !important;' +
       '  filter: none !important; clip: auto !important; clip-path: none !important;' +
       '  contain: layout style !important; isolation: isolate !important;' +
       '}' +
@@ -471,7 +471,7 @@ const chromeInjectionJS = `
       '#window-titlebar {' +
       '  position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; width: 100vw !important; height: 30px !important;' +
       '  display: flex !important; align-items: center !important; justify-content: flex-end !important;' +
-      '  padding: 0 8px 0 12px !important; background: var(--window-bar) !important; color: var(--chrome-subtle) !important; font-size: 11px !important;' +
+      '  padding: 0 8px 0 12px !important; background: transparent !important; color: var(--chrome-subtle) !important; font-size: 11px !important;' +
       '  user-select: none !important; cursor: default !important; z-index: 30 !important; visibility: visible !important; opacity: 1 !important; pointer-events: none !important;' +
       '}' +
       '#window-title { display: none; }' +
@@ -486,11 +486,11 @@ const chromeInjectionJS = `
       '#window-controls { display: flex; height: 30px; pointer-events: auto !important; }' +
       '.window-control {' +
       '  width: 46px !important; height: 30px !important; min-width: 46px !important; min-height: 30px !important; max-width: 46px !important; max-height: 30px !important;' +
-      '  border: 0 !important; background: var(--window-bar) !important; color: var(--chrome-muted) !important;' +
+      '  border: 0 !important; background: transparent !important; color: var(--chrome-muted) !important;' +
       '  display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; font-size: 13px !important;' +
       '}' +
-      '.window-control:hover { background: color-mix(in srgb, var(--chrome-accent) 12%, var(--window-bar)) !important; color: var(--chrome-text); }' +
-      '.window-control.close:hover { background: #c42b1c !important; color: #fff; }' +
+      '.window-control:hover { background: rgba(255,255,255,0.06); color: var(--chrome-text); }' +
+      '.window-control.close:hover { background: #c42b1c; color: #fff; }' +
       '#tabstrip {' +
       '  position: fixed !important; top: 0 !important; left: 0 !important; right: 180px !important; width: calc(100vw - 180px) !important; height: 38px !important;' +
       '  z-index: 20 !important; display: flex !important; align-items: center !important; background: var(--tabstrip-bg) !important;' +

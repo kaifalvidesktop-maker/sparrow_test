@@ -9,49 +9,36 @@ import (
 	"time"
 )
 
-// ---------------------------------------------------
-// PERSISTENCE LAYER
-// ---------------------------------------------------
-//
-// Sparrow keeps browsing history and autofill data in RAM. Saved login
-// records are persisted as AES-GCM ciphertext and never as plain passwords.
-//
-// Everything else that a normal browser is expected to remember between
-// launches - bookmarks, settings, zoom levels, and the recently-closed
-// tab list - is persisted here as a single small JSON file under the
-// user's config directory:
-//
-//   Windows: %AppData%\Sparrow\state.json
-//   Linux:   ~/.config/Sparrow/state.json
-//   macOS:   ~/Library/Application Support/Sparrow/state.json
-//
-// The file is written on a 30s autosave tick and once more on shutdown,
-// so a crash loses at most ~30s of bookmark/setting changes - nothing
-// sensitive is ever at risk since none of it is stored here.
+// Persistence layer: state.json under the user's config dir
+// (%AppData%\Sparrow\state.json on Windows). Autosaved every 30s and on shutdown.
+// History stays RAM-only by design; bookmarks and finished downloads are persisted
+// so a restored backup survives restarts.
 
 type persistedState struct {
 	SavedAt time.Time `json:"savedAt"`
 
-	// Settings snapshot
-	Theme               string               `json:"theme"`
-	DefaultSearchEngine string               `json:"defaultSearchEngine"`
-	Homepage            string               `json:"homepage"`
-	JSEnabled           bool                 `json:"jsEnabled"`
-	ImagesEnabled       bool                 `json:"imagesEnabled"`
-	DownloadPath        string               `json:"downloadPath"`
-	CustomTheme         *CustomThemeSnapshot `json:"customTheme,omitempty"`
-	HomeAnimation       string               `json:"homeAnimation,omitempty"`
-	HomeWallpaper       string               `json:"homeWallpaper,omitempty"`
+	Theme               string `json:"theme"`
+	DefaultSearchEngine string `json:"defaultSearchEngine"`
+	Homepage            string `json:"homepage"`
+	JSEnabled           bool   `json:"jsEnabled"`
+	ImagesEnabled       bool   `json:"imagesEnabled"`
+	DownloadPath        string `json:"downloadPath"`
 
-	// Autofill snapshot is also saved to disk, but not other session data.
+	CustomTheme   *CustomThemeSnapshot `json:"customTheme,omitempty"`
+	HomeAnimation string               `json:"homeAnimation,omitempty"`
+	HomeWallpaper string               `json:"homeWallpaper,omitempty"`
+
 	Autofill AutofillData `json:"autofill"`
 
-	// Saved favorites (local to the PC, user-managed list).
-	Favorites    []FavoriteEntry  `json:"favorites"`
-	SavedLinks   []PinnedShortcut `json:"savedLinks"`
+	Favorites []FavoriteEntry    `json:"favorites"`
+	Bookmarks []ExportedBookmark `json:"bookmarks,omitempty"`
+	Downloads []BackupDownload   `json:"downloads,omitempty"`
+	SavedLinks []PinnedShortcut  `json:"savedLinks"`
+
 	Passwords    []StoredPassword `json:"passwords"`
 	PasswordSalt []byte           `json:"passwordSalt,omitempty"`
-	AppLock      AppLockSnapshot  `json:"appLock,omitempty"`
+
+	AppLock AppLockSnapshot `json:"appLock,omitempty"`
 }
 
 var (
@@ -71,7 +58,6 @@ func stateFilePath() (string, error) {
 	return filepath.Join(appDir, "state.json"), nil
 }
 
-// buildPersistedState takes a consistent snapshot of everything we persist.
 func buildPersistedState() *persistedState {
 	settings.mu.Lock()
 	s := persistedState{
@@ -84,13 +70,15 @@ func buildPersistedState() *persistedState {
 		DownloadPath:        settings.DownloadPath,
 	}
 	settings.mu.Unlock()
-	customThemeSnapshot := customTheme.Snapshot()
 
-	s.CustomTheme = &customThemeSnapshot
+	ct := customTheme.Snapshot()
+	s.CustomTheme = &ct
 	s.HomeAnimation = homeAnimationManager.Get()
 	s.HomeWallpaper = wallpaperManager.GetSelectedID()
 	s.Autofill = getAutofillProfile()
 	s.Favorites = favoriteManager.GetAll()
+	s.Bookmarks = exportBookmarks()
+	s.Downloads = exportDownloads(true)
 	s.SavedLinks = shortcutManagerNewTab.GetShortcuts()
 	s.Passwords = passwordVault.Snapshot()
 	s.PasswordSalt = passwordVault.SaltSnapshot()
@@ -98,12 +86,10 @@ func buildPersistedState() *persistedState {
 	return &s
 }
 
-// applyPersistedState restores a loaded snapshot into the live managers.
 func applyPersistedState(s *persistedState) {
 	if s == nil {
 		return
 	}
-
 	settings.mu.Lock()
 	if s.Theme != "" {
 		settings.Theme = s.Theme
@@ -120,29 +106,28 @@ func applyPersistedState(s *persistedState) {
 		settings.DownloadPath = s.DownloadPath
 	}
 	settings.mu.Unlock()
+
 	if s.CustomTheme != nil {
 		customTheme.Restore(*s.CustomTheme)
 	}
 	homeAnimationManager.Restore(s.HomeAnimation)
 	wallpaperManager.Restore(s.HomeWallpaper)
-
 	saveAutofillProfile(s.Autofill)
 	favoriteManager.ReplaceAll(s.Favorites)
+	importBookmarks(s.Bookmarks)
+	importDownloads(s.Downloads)
 	shortcutManagerNewTab.ReplaceAll(s.SavedLinks)
 	passwordVault.Restore(s.Passwords)
 	passwordVault.SetSalt(s.PasswordSalt)
 	appLock.Restore(s.AppLock)
 }
 
-// loadPersistedState reads state.json if present. Missing file is not
-// an error - it just means first run.
 func loadPersistedState() *persistedState {
 	path, err := stateFilePath()
 	if err != nil {
 		log.Println("[persistence] could not resolve config dir:", err)
 		return nil
 	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -150,7 +135,6 @@ func loadPersistedState() *persistedState {
 		}
 		return nil
 	}
-
 	var s persistedState
 	if err := json.Unmarshal(data, &s); err != nil {
 		log.Println("[persistence] corrupt state.json, ignoring:", err)
@@ -159,20 +143,16 @@ func loadPersistedState() *persistedState {
 	return &s
 }
 
-// savePersistedState writes the current snapshot to disk atomically
-// (write to a temp file, then rename) so a crash mid-write can't corrupt it.
+// Atomic write: temp file then rename.
 func savePersistedState() error {
 	path, err := stateFilePath()
 	if err != nil {
 		return err
 	}
-
-	snapshot := buildPersistedState()
-	data, err := json.MarshalIndent(snapshot, "", "  ")
+	data, err := json.MarshalIndent(buildPersistedState(), "", " ")
 	if err != nil {
 		return err
 	}
-
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
@@ -180,7 +160,6 @@ func savePersistedState() error {
 	return os.Rename(tmp, path)
 }
 
-// startAutosave saves state every interval until stop is closed.
 func startAutosave(interval time.Duration, stop <-chan struct{}) {
 	ticker := time.NewTicker(interval)
 	go func() {
@@ -198,13 +177,11 @@ func startAutosave(interval time.Duration, stop <-chan struct{}) {
 	}()
 }
 
-// InitPersistence loads existing state and starts the 30s background ticker.
 func InitPersistence() {
 	if state := loadPersistedState(); state != nil {
 		applyPersistedState(state)
 		log.Println("[persistence] persisted state loaded successfully")
 	}
-
 	autosaveOnce.Do(func() {
 		autosaveStopChan = make(chan struct{})
 		startAutosave(30*time.Second, autosaveStopChan)
@@ -212,7 +189,6 @@ func InitPersistence() {
 	})
 }
 
-// StopPersistence halts background autosave and does a final write to disk on shutdown.
 func StopPersistence() {
 	if autosaveStopChan != nil {
 		select {
@@ -228,7 +204,7 @@ func StopPersistence() {
 	}
 }
 
-// --- tiny local helpers so this file has zero extra imports beyond stdlib ---
+// --- tiny local helpers (kept: may be used elsewhere) ---
 
 func persistIntToStr(n int) string {
 	if n == 0 {
