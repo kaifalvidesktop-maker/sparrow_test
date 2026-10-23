@@ -145,6 +145,7 @@ const chromeInjectionJS = `
 
   var sparrowAutoPiPAttempted = false;
   function sparrowRequestAutoPiP() {
+    return; // native Chromium PiP disabled: Sparrow's own video card (pip_auto.go) is used
     if (sparrowAutoPiPAttempted || document.pictureInPictureElement ||
         !document.pictureInPictureEnabled) return;
     var videos = document.querySelectorAll('video');
@@ -1536,6 +1537,8 @@ const chromeInjectionJS = `
     }
 
     function minimizeWithVideoPiP() {
+      window.minimizeWindow(); // own video card opens by itself on blur
+      return;
       var activePiP = document.pictureInPictureElement;
       var video = Array.prototype.find.call(document.querySelectorAll('video'), function (candidate) {
         return !candidate.paused && !candidate.ended && candidate.readyState >= 2 &&

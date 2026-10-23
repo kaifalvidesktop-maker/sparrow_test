@@ -8,7 +8,7 @@ import (
 // Windows system media card (SMTC) off. Chromium honours only ONE
 // --disable-features switch, so we MERGE into the one flashfix.go sets.
 func init() {
-	const add = "GlobalMediaControls,HardwareMediaKeyHandling,UseSMTC,MediaSessionService"
+	const add = "GlobalMediaControls,HardwareMediaKeyHandling,UseSMTC,MediaSessionService,AutoPictureInPictureForVideoPlayback,DocumentPictureInPictureAPI"
 	const key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"
 	const p = "--disable-features="
 	cur := strings.TrimSpace(os.Getenv(key))
@@ -51,8 +51,7 @@ const pipAutoJS = `
         p: cur.paused, m: cur.muted, v: cur.volume, r: cur.playbackRate
       }));
     } catch (e) {
-      var v = cur; stop(); window.pipClose();
-      try { if (document.pictureInPictureEnabled && !document.pictureInPictureElement) v.requestPictureInPicture(); } catch (e2) {}
+      stop(); window.pipClose(); // cross-origin video cannot be copied: no card, never native PiP
     }
   }
   function start() {
@@ -83,6 +82,19 @@ const pipAutoJS = `
   window.addEventListener('blur', function () { setTimeout(function () { if (!document.hasFocus()) start(); }, 150); });
   window.addEventListener('focus', hide);
   document.addEventListener('visibilitychange', function () { document.hidden ? start() : hide(); });
+
+  // block every native Chromium PiP path (site auto-PiP, document PiP, manual API)
+  try {
+    var msp = navigator.mediaSession, orig = msp.setActionHandler.bind(msp);
+    msp.setActionHandler = function (a, h) { if (a === 'enterpictureinpicture') return; return orig(a, h); };
+  } catch (e) {}
+  try { HTMLVideoElement.prototype.requestPictureInPicture = function () { return Promise.reject(new DOMException('disabled', 'NotAllowedError')); }; } catch (e) {}
+  try { Object.defineProperty(window, 'documentPictureInPicture', { value: undefined, configurable: true }); } catch (e) {}
+  function noPip() {
+    var vs = document.querySelectorAll('video'), i;
+    for (i = 0; i < vs.length; i++) if (!vs[i].hasAttribute('disablepictureinpicture')) vs[i].setAttribute('disablepictureinpicture', '');
+  }
+  noPip(); setInterval(noPip, 1000);
 
   // keep the Windows media card empty
   function hideSmtc() { try { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } catch (e) {} }
