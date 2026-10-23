@@ -69,6 +69,9 @@ type ExtManifest struct {
 	RunAt          string   `json:"run_at"`
 	JS             []string `json:"js"`
 	CSS            []string `json:"css"`
+	// HostPermissions lists the https hosts the extension may fetch through
+	// sparrowExt.fetch (Chrome-style patterns, e.g. "https://api.example.com/*").
+	HostPermissions []string `json:"host_permissions"`
 }
 
 type ExtInfo struct {
@@ -89,6 +92,7 @@ type loadedExt struct {
 	css      string
 	include  []*regexp.Regexp
 	exclude  []*regexp.Regexp
+	hosts    []*regexp.Regexp
 }
 
 type ExtensionManager struct {
@@ -309,6 +313,14 @@ func normalizeManifest(mf *ExtManifest) error {
 	for _, p := range append(append([]string{}, mf.Matches...), mf.ExcludeMatches...) {
 		if _, err := compileMatchPattern(p); err != nil {
 			return fmt.Errorf("bad match pattern %q", p)
+		}
+	}
+	for _, p := range mf.HostPermissions {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(p)), "https://") {
+			return fmt.Errorf("host permission %q must start with https://", p)
+		}
+		if _, err := compileMatchPattern(p); err != nil {
+			return fmt.Errorf("bad host permission %q", p)
 		}
 	}
 	clean := func(list []string) ([]string, error) {
@@ -563,6 +575,13 @@ func loadExtFromDir(dir string) (*loadedExt, error) {
 		}
 		ext.exclude = append(ext.exclude, re)
 	}
+	for _, p := range mf.HostPermissions {
+		re, err := compileMatchPattern(p)
+		if err != nil {
+			return nil, err
+		}
+		ext.hosts = append(ext.hosts, re)
+	}
 	return ext, nil
 }
 
@@ -688,10 +707,28 @@ function inject(){
       }catch(_){}
     }
   }
+  var pend=(window.__sparrowExtPending=window.__sparrowExtPending||{});
+  if(!window.__sparrowExtDone){
+    window.__sparrowExtDone=function(rid,raw){
+      var p=pend[rid];if(!p){return;}delete pend[rid];
+      try{var r=JSON.parse(raw);
+        if(r.ok){p.res({status:r.status,text:r.body});}else{p.rej(new Error(r.error||'request failed'));}
+      }catch(e){p.rej(e);}
+    };
+  }
+  function sparrowFetch(u){
+    return new Promise(function(res,rej){
+      if(typeof window.extFetchStart!=='function'){rej(new Error('fetch is not available'));return;}
+      var rid=ID+':'+Math.random().toString(36).slice(2);
+      pend[rid]={res:res,rej:rej};
+      setTimeout(function(){if(pend[rid]){delete pend[rid];rej(new Error('timeout'));}},20000);
+      try{window.extFetchStart(ID,String(u),rid);}catch(e){delete pend[rid];rej(e);}
+    });
+  }
   try{
     (function(sparrowExt){
 __JS__
-    })({id:ID,version:__VERSION__});
+    })({id:ID,version:__VERSION__,fetch:sparrowFetch});
   }catch(err){
     try{console.error('[Sparrow extension '+ID+']',err);}catch(_){}
   }
@@ -738,6 +775,62 @@ func (m *ExtensionManager) PayloadsFor(pageURL string) []string {
 		out = append(out, code)
 	}
 	return out
+}
+
+// ---------- restricted network access for extensions ----------
+
+var extHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+const extFetchMaxBytes = 2 << 20
+
+// Fetch performs an https GET for an enabled extension. The URL must match
+// one of the extension's host_permissions.
+func (m *ExtensionManager) Fetch(id, rawURL string) (int, string, error) {
+	m.mu.Lock()
+	ext := m.loaded[id]
+	m.mu.Unlock()
+	if ext == nil {
+		return 0, "", errors.New("extension is not enabled")
+	}
+	low := strings.ToLower(rawURL)
+	if !strings.HasPrefix(low, "https://") {
+		return 0, "", errors.New("only https URLs are allowed")
+	}
+	allowed := false
+	for _, re := range ext.hosts {
+		if re.MatchString(rawURL) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return 0, "", errors.New("host is not in the extension's host_permissions")
+	}
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Sparrow")
+	resp, err := extHTTPClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, extFetchMaxBytes))
+	if err != nil {
+		return resp.StatusCode, "", err
+	}
+	return resp.StatusCode, string(body), nil
+}
+
+func extFetchJSON(id, rawURL string) string {
+	status, body, err := extensions.Fetch(id, rawURL)
+	if err != nil {
+		b, _ := json.Marshal(map[string]interface{}{"ok": false, "error": err.Error()})
+		return string(b)
+	}
+	b, _ := json.Marshal(map[string]interface{}{"ok": true, "status": status, "body": body})
+	return string(b)
 }
 
 // ---------- JSON helpers used by the bindings ----------

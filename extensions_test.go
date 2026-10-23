@@ -3,6 +3,8 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,5 +190,42 @@ func TestTokenGate(t *testing.T) {
 	}
 	if !strings.Contains(extListJSON(extUIToken), `"ok":true`) {
 		t.Fatal("right token must work")
+	}
+}
+
+func TestFetchAllowlist(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	}))
+	defer srv.Close()
+	old := extHTTPClient
+	extHTTPClient = srv.Client()
+	defer func() { extHTTPClient = old }()
+
+	m := newExtensionManager(t.TempDir())
+	m.Load()
+	manifest := `{"id":"net-ext","name":"Net","js":["a.js"],"host_permissions":["` + srv.URL + `/*"]}`
+	if _, err := m.InstallZip(makeZip(t, map[string]string{"manifest.json": manifest, "a.js": "1"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Fetch("net-ext", srv.URL+"/x"); err == nil {
+		t.Fatal("disabled extension must not fetch")
+	}
+	if err := m.Enable("net-ext"); err != nil {
+		t.Fatal(err)
+	}
+	status, body, err := m.Fetch("net-ext", srv.URL+"/x")
+	if err != nil || status != 200 || body != "hello" {
+		t.Fatalf("fetch failed: %v %d %q", err, status, body)
+	}
+	if _, _, err := m.Fetch("net-ext", "https://evil.example.org/x"); err == nil {
+		t.Fatal("host outside host_permissions must be blocked")
+	}
+	if _, _, err := m.Fetch("net-ext", "http://127.0.0.1/x"); err == nil {
+		t.Fatal("plain http must be blocked")
+	}
+	bad := makeZip(t, map[string]string{"manifest.json": `{"id":"bad","name":"b","js":["a.js"],"host_permissions":["http://x.com/*"]}`, "a.js": "1"})
+	if _, err := m.InstallZip(bad); err == nil {
+		t.Fatal("non-https host permission must be rejected")
 	}
 }
