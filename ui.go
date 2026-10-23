@@ -768,6 +768,7 @@ const chromeInjectionJS = `
       '      <div class="menu-item" data-go="sparrow://cookies"><span>Cookies</span></div>' +
       '      <div class="menu-item" data-go="sparrow://updates"><span>About &amp; Updates</span></div>' +
       '      <div class="menu-item" data-go="sparrow://backup"><span>Backup &amp; Restore</span></div>' +
+      '      <div class="menu-item" data-go="sparrow://extensions"><span>Extensions</span></div>' +
       '      <div class="menu-item" data-go="sparrow://customize"><span>Customize</span></div>' +
       '      <div class="menu-item" id="menu-print"><span>Print</span></div>' +
       '      <div class="menu-divider"></div>' +

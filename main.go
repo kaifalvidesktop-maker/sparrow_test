@@ -127,6 +127,8 @@ func internalPageHTML(sparrowURL string) (string, bool) {
 		return updatesPageHTML, true
 	case "sparrow://backup":
 		return backupPageHTML, true
+	case "sparrow://extensions":
+		return strings.ReplaceAll(extensionsPageHTML, "__EXT_TOKEN__", extUIToken), true
 	case "sparrow://pdf":
 		return pdfViewerPageHTML, true
 	case "sparrow://customize":
@@ -347,6 +349,7 @@ func main() {
 	}
 	// Initialize disk persistence engine
 	InitPersistence()
+	extensions.Load()
 	defer StopPersistence()
 	defer ShutdownDownloads()
 
@@ -377,8 +380,7 @@ func main() {
 	w.Init(BuildPrivacyJS())
 	w.Init(BuildPrivacy2JS())
 	w.Init(BuildPrivacy3JS())
-	w.Init(pipAutoJS)
-	setupPipCard(w)
+	w.Init(extensionLoaderJS)
 	w.Init(cookieHookJS)
 	w.Init(autocompleteHTML())
 
@@ -1509,6 +1511,45 @@ func main() {
 
 	w.Bind("restoreBackup", func(jsonStr string) (int, error) {
 		return RestoreBackupJSON(jsonStr)
+	})
+
+	// -------------------------------
+	// EXTENSIONS (zip packages, see extensions.go)
+	// -------------------------------
+
+	w.Bind("extRequest", func(pageURL string) {
+		if appLock.IsLocked() {
+			return
+		}
+		payloads := extensions.PayloadsFor(pageURL)
+		if len(payloads) == 0 {
+			return
+		}
+		w.Dispatch(func() {
+			for _, code := range payloads {
+				w.Eval(code)
+			}
+		})
+	})
+
+	w.Bind("extList", func(token string) string {
+		return extListJSON(token)
+	})
+
+	w.Bind("extSetEnabled", func(token, id string, on bool) string {
+		return extSetEnabledJSON(token, id, on)
+	})
+
+	w.Bind("extInstallB64", func(token, b64 string) string {
+		return extInstallB64JSON(token, b64)
+	})
+
+	w.Bind("extInstallURL", func(token, rawURL string) string {
+		return extInstallURLJSON(token, rawURL)
+	})
+
+	w.Bind("extRemove", func(token, id string) string {
+		return extRemoveJSON(token, id)
 	})
 
 	// -------------------------------

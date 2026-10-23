@@ -66,6 +66,7 @@ func tabDisplayTitle(rawURL string) string {
 			"feedback":      "Feedback",
 			"updates":       "Updates",
 			"backup":        "Backup",
+			"extensions":    "Extensions",
 			"pdf":           "PDF Viewer",
 		}
 		if title, ok := internalTitles[route]; ok {
