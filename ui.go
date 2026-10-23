@@ -227,7 +227,10 @@ const chromeInjectionJS = `
           if (stack[i].localName === name) { stack.length = i; break; }
         }
       } else if (m[2]) {
-        var el = document.createElement(m[2].toLowerCase());
+        var tag = m[2].toLowerCase();
+        var svgNS = 'http://www.w3.org/2000/svg';
+        var inSvg = tag === 'svg' || (current.namespaceURI === svgNS && current.localName !== 'foreignobject');
+        var el = inSvg ? document.createElementNS(svgNS, tag) : document.createElement(tag);
         var a;
         attrRe.lastIndex = 0;
         while ((a = attrRe.exec(m[3] || '')) !== null) {
