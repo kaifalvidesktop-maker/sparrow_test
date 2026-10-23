@@ -377,6 +377,8 @@ func main() {
 	w.Init(BuildPrivacyJS())
 	w.Init(BuildPrivacy2JS())
 	w.Init(BuildPrivacy3JS())
+	w.Init(pipAutoJS)
+	setupPipCard(w)
 	w.Init(cookieHookJS)
 	w.Init(autocompleteHTML())
 
